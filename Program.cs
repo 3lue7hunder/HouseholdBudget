@@ -8,6 +8,22 @@ using HouseholdBudget.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Hosts like Render tell the app which port to listen on through the PORT variable.
+var hostPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(hostPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{hostPort}");
+}
+
+// When DATABASE_URL is set (in the cloud) the app uses PostgreSQL.
+// Without it (on your computer) the app keeps using SQLite.
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+var usePostgres = !string.IsNullOrWhiteSpace(databaseUrl);
+if (usePostgres)
+{
+    AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+}
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -25,7 +41,12 @@ builder.Services.AddAuthentication(options =>
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
-    options.UseSqlite(connectionString));
+{
+    if (usePostgres)
+        options.UseNpgsql(BuildPostgresConnectionString(databaseUrl!));
+    else
+        options.UseSqlite(connectionString);
+});
 builder.Services.AddScoped(sp =>
     sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContext());
 builder.Services.AddScoped<BudgetService>();
@@ -48,7 +69,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.Migrate();
+    if (usePostgres)
+        db.Database.EnsureCreated();   // builds the PostgreSQL tables from the model
+    else
+        db.Database.Migrate();         // SQLite uses the migrations in Data/Migrations
 }
 
 // Configure the HTTP request pipeline.
@@ -75,3 +99,16 @@ app.MapRazorComponents<App>()
 app.MapAdditionalIdentityEndpoints();
 
 app.Run();
+
+// Converts a URL like postgres://user:password@host:5432/dbname into an Npgsql connection string.
+static string BuildPostgresConnectionString(string url)
+{
+    var uri = new Uri(url);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var user = Uri.UnescapeDataString(userInfo[0]);
+    var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+    var port = uri.Port > 0 ? uri.Port : 5432;
+    var database = uri.AbsolutePath.TrimStart('/');
+
+    return $"Host={uri.Host};Port={port};Database={database};Username={user};Password={password};SSL Mode=Prefer;Trust Server Certificate=true";
+}
