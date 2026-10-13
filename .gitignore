@@ -483,3 +483,5 @@ $RECYCLE.BIN/
 
 # Local SQLite database
 *.db
+
+app.db*

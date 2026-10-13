@@ -1,0 +1,143 @@
+@page "/household"
+   @rendermode InteractiveServer
+   @attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@using HouseholdBudget.Data
+@using HouseholdBudget.Services
+@inject BudgetService Svc
+
+<PageTitle>Household</PageTitle>
+
+<h1>My Household</h1>
+
+@if (loading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (user?.Household is { } household)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h4 class="card-title">@household.Name</h4>
+            <p class="mb-1">Invite code: <strong class="fs-4">@household.InviteCode</strong></p>
+            <p class="text-muted mb-0">Share this code with family members. They enter it here after creating their own account.</p>
+        </div>
+    </div>
+
+    <h5>Members</h5>
+    <ul class="list-group mb-4">
+        @foreach (var member in household.Members.OrderBy(m => m.Name))
+        {
+            <li class="list-group-item">
+                @member.Name
+                @if (member.Id == user.Id)
+                {
+                    <span class="badge bg-primary ms-2">You</span>
+                }
+            </li>
+        }
+    </ul>
+
+    @if (!confirmLeave)
+    {
+        <button class="btn btn-outline-danger" @onclick="() => confirmLeave = true">Leave household</button>
+    }
+    else
+    {
+        <span class="me-2">Leave this household?</span>
+        <button class="btn btn-danger me-2" @onclick="LeaveAsync">Yes, leave</button>
+        <button class="btn btn-secondary" @onclick="() => confirmLeave = false">Cancel</button>
+    }
+}
+else
+{
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-danger">@message</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card h-100"><div class="card-body">
+                <h5 class="card-title">Create a household</h5>
+                <EditForm Model="createModel" OnValidSubmit="CreateAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <label class="form-label">Household name</label>
+                    <InputText class="form-control mb-3" @bind-Value="createModel.Name" placeholder="The Smith Family" />
+                    <button class="btn btn-primary" type="submit">Create</button>
+                </EditForm>
+            </div></div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100"><div class="card-body">
+                <h5 class="card-title">Join with an invite code</h5>
+                <EditForm Model="joinModel" OnValidSubmit="JoinAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <label class="form-label">Invite code</label>
+                    <InputText class="form-control mb-3" @bind-Value="joinModel.Code" placeholder="A1B2C3D4" />
+                    <button class="btn btn-primary" type="submit">Join</button>
+                </EditForm>
+            </div></div>
+        </div>
+    </div>
+}
+
+@code {
+    private sealed class CreateModel
+    {
+        [Required(ErrorMessage = "Please enter a name."), StringLength(80)]
+        public string Name { get; set; } = "";
+    }
+
+    private sealed class JoinModel
+    {
+        [Required(ErrorMessage = "Please enter an invite code."), StringLength(12)]
+        public string Code { get; set; } = "";
+    }
+
+    private bool loading = true;
+    private bool confirmLeave;
+    private string? message;
+    private ApplicationUser? user;
+    private CreateModel createModel = new();
+    private JoinModel joinModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        user = await Svc.GetCurrentUserAsync();
+        loading = false;
+    }
+
+    private async Task CreateAsync()
+    {
+        message = null;
+        await Svc.CreateHouseholdAsync(createModel.Name);
+        await LoadAsync();
+    }
+
+    private async Task JoinAsync()
+    {
+        message = null;
+        var ok = await Svc.JoinHouseholdAsync(joinModel.Code);
+        if (!ok)
+        {
+            message = "No household found with that invite code.";
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LeaveAsync()
+    {
+        await Svc.LeaveHouseholdAsync();
+        confirmLeave = false;
+        await LoadAsync();
+    }
+}

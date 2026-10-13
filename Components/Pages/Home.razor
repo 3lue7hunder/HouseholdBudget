@@ -1,7 +1,169 @@
-﻿@page "/"
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@using HouseholdBudget.Data
+@using HouseholdBudget.Services
+@inject BudgetService Svc
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Household Budget</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Household Budget Tracker</h1>
 
-Welcome to your new app.
+@if (loading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!isAuthenticated)
+{
+    <p class="lead">Track shared expenses, set monthly category budgets, and see where your household money goes.</p>
+    <a class="btn btn-primary me-2" href="Account/Register">Create account</a>
+    <a class="btn btn-outline-primary" href="Account/Login">Log in</a>
+}
+else if (!hasHousehold)
+{
+    <div class="alert alert-info">
+        Welcome! Start by creating a household, or join one with an invite code.
+        <a href="household">Go to Household</a>
+    </div>
+}
+else
+{
+    <p class="text-muted">@householdName &middot; @monthLabel</p>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card text-center"><div class="card-body">
+                <div class="text-muted">Spent this month</div>
+                <div class="fs-3">@totalSpent.ToString("C")</div>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center"><div class="card-body">
+                <div class="text-muted">Total budgeted</div>
+                <div class="fs-3">@totalBudget.ToString("C")</div>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center"><div class="card-body">
+                <div class="text-muted">Remaining</div>
+                <div class="fs-3 @(totalBudget - totalSpent < 0 ? "text-danger" : "text-success")">
+                    @((totalBudget - totalSpent).ToString("C"))
+                </div>
+            </div></div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <h4>Budget status</h4>
+            @if (!statuses.Any(s => s.Limit is not null))
+            {
+                <p class="text-muted">No budgets yet. <a href="budgets">Set some budgets</a>.</p>
+            }
+            else
+            {
+                @foreach (var s in statuses.Where(s => s.Limit is not null))
+                {
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>@s.CategoryName</span>
+                            <span>@s.Spent.ToString("C") / @s.Limit!.Value.ToString("C")</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar @BarClass(s.Percent)" style="width:@(Math.Min(s.Percent, 100).ToString("0"))%"></div>
+                        </div>
+                    </div>
+                }
+            }
+
+            <h4 class="mt-4">Spending by member</h4>
+            @if (memberTotals.Count == 0)
+            {
+                <p class="text-muted">No expenses yet this month.</p>
+            }
+            else
+            {
+                <ul class="list-group">
+                    @foreach (var m in memberTotals)
+                    {
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>@m.Key</span><span>@m.Value.ToString("C")</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="col-lg-6">
+            <h4>Recent expenses</h4>
+            @if (expenses.Count == 0)
+            {
+                <p class="text-muted">Nothing here yet. <a href="expenses">Add your first expense</a>.</p>
+            }
+            else
+            {
+                <table class="table table-sm">
+                    <tbody>
+                    @foreach (var e in expenses.Take(8))
+                    {
+                        <tr>
+                            <td>@e.Date.ToString("MMM d")</td>
+                            <td>@e.Description <span class="badge bg-secondary">@e.Category?.Name</span></td>
+                            <td class="text-end">@e.Amount.ToString("C")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                <a href="expenses">See all expenses</a>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool loading = true;
+    private bool isAuthenticated;
+    private bool hasHousehold;
+    private string householdName = "";
+    private string monthLabel = DateTime.Today.ToString("MMMM yyyy");
+    private List<Expense> expenses = new();
+    private List<BudgetStatus> statuses = new();
+    private Dictionary<string, decimal> memberTotals = new();
+    private decimal totalSpent;
+    private decimal totalBudget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            isAuthenticated = state.User.Identity?.IsAuthenticated == true;
+        }
+
+        if (isAuthenticated)
+        {
+            var user = await Svc.GetCurrentUserAsync();
+            if (user?.Household is not null)
+            {
+                hasHousehold = true;
+                householdName = user.Household.Name;
+
+                var today = DateTime.Today;
+                expenses = await Svc.GetExpensesAsync(today.Year, today.Month);
+                statuses = await Svc.GetBudgetStatusAsync(today.Year, today.Month);
+
+                totalSpent = expenses.Sum(e => e.Amount);
+                totalBudget = statuses.Sum(s => s.Limit ?? 0);
+                memberTotals = expenses
+                    .GroupBy(e => e.PaidBy?.Name ?? "Former member")
+                    .ToDictionary(g => g.Key, g => g.Sum(e => e.Amount));
+            }
+        }
+
+        loading = false;
+    }
+
+    private static string BarClass(double percent) =>
+        percent >= 100 ? "bg-danger" : percent >= 75 ? "bg-warning" : "bg-success";
+}

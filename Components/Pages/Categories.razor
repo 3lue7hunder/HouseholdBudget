@@ -1,0 +1,118 @@
+@page "/categories"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using HouseholdBudget.Data
+@using HouseholdBudget.Services
+@inject BudgetService Svc
+
+<PageTitle>Categories</PageTitle>
+
+<h1>Categories</h1>
+
+@if (loading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!hasHousehold)
+{
+    <div class="alert alert-info">
+        You need a household first. <a href="household">Create or join one</a>.
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+
+    <div class="input-group mb-4" style="max-width: 420px;">
+        <input class="form-control" placeholder="New category name" maxlength="60" @bind="newName" @bind:event="oninput" />
+        <button class="btn btn-primary" @onclick="AddAsync" disabled="@string.IsNullOrWhiteSpace(newName)">Add</button>
+    </div>
+
+    <ul class="list-group" style="max-width: 520px;">
+        @foreach (var c in categories)
+        {
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                @if (renamingId == c.Id)
+                {
+                    <input class="form-control me-2" maxlength="60" @bind="renameText" @bind:event="oninput" />
+                    <div class="text-nowrap">
+                        <button class="btn btn-sm btn-success me-1" @onclick="SaveRenameAsync">Save</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => renamingId = null">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <span>@c.Name</span>
+                    <div class="text-nowrap">
+                        @if (confirmDeleteId == c.Id)
+                        {
+                            <button class="btn btn-sm btn-danger me-1" @onclick="() => DeleteAsync(c.Id)">Confirm</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => confirmDeleteId = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartRename(c)">Rename</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => confirmDeleteId = c.Id">Delete</button>
+                        }
+                    </div>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private bool loading = true;
+    private bool hasHousehold;
+    private List<Category> categories = new();
+    private string newName = "";
+    private int? renamingId;
+    private string renameText = "";
+    private int? confirmDeleteId;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await Svc.GetCurrentUserAsync();
+        hasHousehold = user?.HouseholdId is not null;
+        if (hasHousehold) await LoadAsync();
+        loading = false;
+    }
+
+    private async Task LoadAsync() => categories = await Svc.GetCategoriesAsync();
+
+    private async Task AddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        error = null;
+        await Svc.AddCategoryAsync(newName);
+        newName = "";
+        await LoadAsync();
+    }
+
+    private void StartRename(Category c)
+    {
+        error = null;
+        renamingId = c.Id;
+        renameText = c.Name;
+    }
+
+    private async Task SaveRenameAsync()
+    {
+        if (renamingId is null || string.IsNullOrWhiteSpace(renameText)) return;
+        await Svc.RenameCategoryAsync(renamingId.Value, renameText);
+        renamingId = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        var deleted = await Svc.DeleteCategoryAsync(id);
+        confirmDeleteId = null;
+        error = deleted ? null : "That category still has expenses. Move or delete them first.";
+        await LoadAsync();
+    }
+}
