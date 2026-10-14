@@ -34,7 +34,7 @@ Built by Tyler Rusnell for **CSE 325: .NET Software Development** (BYU-Idaho).
 ## User Guide
 
 ### 1. Create an account
-Click **Register** in the top bar, enter an email address and password, and submit. You are logged in right away.
+Click **Register** in the top bar, enter an email address and password, and submit. You are logged in right away. There is no password reset, so choose a password you will remember.
 
 ### 2. Create or join a household
 Open **Household** in the side menu.
@@ -81,7 +81,7 @@ Every query in `BudgetService` is limited to the signed-in user's household, so 
 - Any household member can edit or delete any expense in their household. The planned rule that members can only change their own expenses is not built.
 - There is no admin role, so members cannot remove other members. They can only leave on their own.
 - There is no multi-month spending history or trends page. Single months can be viewed on the Expenses and Budgets pages.
-- Email confirmation and password reset by email are not set up.
+- There is no forgot-password option. Accounts use email and password only, with no email confirmation, so a user who forgets their password cannot reset it.
 - A user belongs to one household at a time.
 
 ## Author
