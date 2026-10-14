@@ -31,7 +31,7 @@ else
             <button class="btn btn-primary" @onclick="StartAdd">Add expense</button>
         </div>
         <div class="col text-end">
-            <span class="fs-5">Total: <strong>@Total.ToString("C")</strong></span>
+            <span class="fs-5">Total: <strong>@Total.ToString("$#,##0.00")</strong></span>
         </div>
     </div>
 
@@ -112,7 +112,7 @@ else
                     </td>
                     <td>@e.Category?.Name</td>
                     <td>@(e.PaidBy?.Name ?? "Former member")</td>
-                    <td class="text-end">@e.Amount.ToString("C")</td>
+                    <td class="text-end">@e.Amount.ToString("$#,##0.00")</td>
                     <td class="text-end text-nowrap">
                         @if (confirmDeleteId == e.Id)
                         {

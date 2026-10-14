@@ -33,20 +33,20 @@ else
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Spent this month</div>
-                <div class="fs-3">@totalSpent.ToString("C")</div>
+                <div class="fs-3">@totalSpent.ToString("$#,##0.00")</div>
             </div></div>
         </div>
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Total budgeted</div>
-                <div class="fs-3">@totalBudget.ToString("C")</div>
+                <div class="fs-3">@totalBudget.ToString("$#,##0.00")</div>
             </div></div>
         </div>
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Remaining</div>
                 <div class="fs-3 @(totalBudget - totalSpent < 0 ? "text-danger" : "text-success")">
-                    @((totalBudget - totalSpent).ToString("C"))
+                    @((totalBudget - totalSpent).ToString("$#,##0.00"))
                 </div>
             </div></div>
         </div>
@@ -66,7 +66,7 @@ else
                     <div class="mb-3">
                         <div class="d-flex justify-content-between">
                             <span>@s.CategoryName</span>
-                            <span>@s.Spent.ToString("C") / @s.Limit!.Value.ToString("C")</span>
+                            <span>@s.Spent.ToString("$#,##0.00") / @s.Limit!.Value.ToString("$#,##0.00")</span>
                         </div>
                         <div class="progress">
                             <div class="progress-bar @BarClass(s.Percent)" style="width:@(Math.Min(s.Percent, 100).ToString("0"))%"></div>
@@ -86,7 +86,7 @@ else
                     @foreach (var m in memberTotals)
                     {
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>@m.Key</span><span>@m.Value.ToString("C")</span>
+                            <span>@m.Key</span><span>@m.Value.ToString("$#,##0.00")</span>
                         </li>
                     }
                 </ul>
@@ -108,7 +108,7 @@ else
                         <tr>
                             <td>@e.Date.ToString("MMM d")</td>
                             <td>@e.Description <span class="badge bg-secondary">@e.Category?.Name</span></td>
-                            <td class="text-end">@e.Amount.ToString("C")</td>
+                            <td class="text-end">@e.Amount.ToString("$#,##0.00")</td>
                         </tr>
                     }
                     </tbody>
