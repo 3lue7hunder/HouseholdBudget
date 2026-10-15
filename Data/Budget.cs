@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace HouseholdBudget.Data;
 
 // One monthly spending limit per category. The limit repeats every month.
+/// <summary>A monthly spending limit for one category.</summary>
 public class Budget
 {
     public int Id { get; set; }

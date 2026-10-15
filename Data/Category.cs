@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace HouseholdBudget.Data;
 
+/// <summary>A spending category (such as Groceries) that belongs to one household.</summary>
 public class Category
 {
     public int Id { get; set; }

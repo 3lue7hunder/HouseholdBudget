@@ -1,20 +1,23 @@
 @page "/"
 @using Microsoft.AspNetCore.Components.Authorization
-@using HouseholdBudget.Data
-@using HouseholdBudget.Services
 @inject BudgetService Svc
 
-<PageTitle>Household Budget</PageTitle>
+<PageTitle>Dashboard | Household Budget</PageTitle>
 
 <h1>Household Budget Tracker</h1>
 
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger" role="alert">@error</div>
+}
+
 @if (loading)
 {
-    <p><em>Loading...</em></p>
+    <p role="status">Loading...</p>
 }
 else if (!isAuthenticated)
 {
-    <p class="lead">Track shared expenses, set monthly category budgets, and see where your household money goes.</p>
+    <p class="lead">Track shared expenses, set monthly budgets for each category, and see where your household money goes.</p>
     <a class="btn btn-primary me-2" href="Account/Register">Create account</a>
     <a class="btn btn-outline-primary" href="Account/Login">Log in</a>
 }
@@ -33,20 +36,20 @@ else
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Spent this month</div>
-                <div class="fs-3">@totalSpent.ToString("$#,##0.00")</div>
+                <div class="fs-3">@Money.Format(totalSpent)</div>
             </div></div>
         </div>
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Total budgeted</div>
-                <div class="fs-3">@totalBudget.ToString("$#,##0.00")</div>
+                <div class="fs-3">@Money.Format(totalBudget)</div>
             </div></div>
         </div>
         <div class="col-md-4">
             <div class="card text-center"><div class="card-body">
                 <div class="text-muted">Remaining</div>
                 <div class="fs-3 @(totalBudget - totalSpent < 0 ? "text-danger" : "text-success")">
-                    @((totalBudget - totalSpent).ToString("$#,##0.00"))
+                    @Money.Format(totalBudget - totalSpent)
                 </div>
             </div></div>
         </div>
@@ -54,7 +57,7 @@ else
 
     <div class="row g-4">
         <div class="col-lg-6">
-            <h4>Budget status</h4>
+            <h2 class="h4">Budget status</h2>
             @if (!statuses.Any(s => s.Limit is not null))
             {
                 <p class="text-muted">No budgets yet. <a href="budgets">Set some budgets</a>.</p>
@@ -66,16 +69,18 @@ else
                     <div class="mb-3">
                         <div class="d-flex justify-content-between">
                             <span>@s.CategoryName</span>
-                            <span>@s.Spent.ToString("$#,##0.00") / @s.Limit!.Value.ToString("$#,##0.00")</span>
+                            <span>@Money.Format(s.Spent) of @Money.Format(s.Limit!.Value)</span>
                         </div>
-                        <div class="progress">
-                            <div class="progress-bar @BarClass(s.Percent)" style="width:@(Math.Min(s.Percent, 100).ToString("0"))%"></div>
+                        <div class="progress" role="progressbar" aria-label="@s.CategoryName budget used"
+                             aria-valuenow="@BarWidth(s.Percent)" aria-valuemin="0" aria-valuemax="100">
+                            <div class="progress-bar @BarClass(s.Percent)" style="width:@(BarWidth(s.Percent))%"></div>
                         </div>
+                        <div class="small text-muted">@Math.Round(s.Percent)% used@(s.Percent >= 100 ? " (over budget)" : "")</div>
                     </div>
                 }
             }
 
-            <h4 class="mt-4">Spending by member</h4>
+            <h2 class="h4 mt-4">Spending by member</h2>
             @if (memberTotals.Count == 0)
             {
                 <p class="text-muted">No expenses yet this month.</p>
@@ -86,7 +91,7 @@ else
                     @foreach (var m in memberTotals)
                     {
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>@m.Key</span><span>@m.Value.ToString("$#,##0.00")</span>
+                            <span>@m.Key</span><span>@Money.Format(m.Value)</span>
                         </li>
                     }
                 </ul>
@@ -94,25 +99,35 @@ else
         </div>
 
         <div class="col-lg-6">
-            <h4>Recent expenses</h4>
+            <h2 class="h4">Recent expenses</h2>
             @if (expenses.Count == 0)
             {
                 <p class="text-muted">Nothing here yet. <a href="expenses">Add your first expense</a>.</p>
             }
             else
             {
-                <table class="table table-sm">
-                    <tbody>
-                    @foreach (var e in expenses.Take(8))
-                    {
-                        <tr>
-                            <td>@e.Date.ToString("MMM d")</td>
-                            <td>@e.Description <span class="badge bg-secondary">@e.Category?.Name</span></td>
-                            <td class="text-end">@e.Amount.ToString("$#,##0.00")</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <caption class="visually-hidden">The most recent expenses this month</caption>
+                        <thead class="visually-hidden">
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Description and category</th>
+                                <th scope="col">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var e in expenses.Take(8))
+                        {
+                            <tr>
+                                <td>@e.Date.ToString("MMM d")</td>
+                                <td>@e.Description <span class="badge bg-secondary">@e.Category?.Name</span></td>
+                                <td class="text-end">@Money.Format(e.Amount)</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
                 <a href="expenses">See all expenses</a>
             }
         </div>
@@ -120,6 +135,7 @@ else
 }
 
 @code {
+    // Tells us whether the visitor is logged in. The dashboard is only filled in for logged in users.
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private bool loading = true;
@@ -127,43 +143,56 @@ else
     private bool hasHousehold;
     private string householdName = "";
     private string monthLabel = DateTime.Today.ToString("MMMM yyyy");
+    private string? error;
     private List<Expense> expenses = new();
     private List<BudgetStatus> statuses = new();
     private Dictionary<string, decimal> memberTotals = new();
     private decimal totalSpent;
     private decimal totalBudget;
 
+    /// <summary>Loads this month's numbers for the signed-in user's household.</summary>
     protected override async Task OnInitializedAsync()
     {
-        if (AuthState is not null)
+        try
         {
-            var state = await AuthState;
-            isAuthenticated = state.User.Identity?.IsAuthenticated == true;
-        }
-
-        if (isAuthenticated)
-        {
-            var user = await Svc.GetCurrentUserAsync();
-            if (user?.Household is not null)
+            if (AuthState is not null)
             {
-                hasHousehold = true;
-                householdName = user.Household.Name;
-
-                var today = DateTime.Today;
-                expenses = await Svc.GetExpensesAsync(today.Year, today.Month);
-                statuses = await Svc.GetBudgetStatusAsync(today.Year, today.Month);
-
-                totalSpent = expenses.Sum(e => e.Amount);
-                totalBudget = statuses.Sum(s => s.Limit ?? 0);
-                memberTotals = expenses
-                    .GroupBy(e => e.PaidBy?.Name ?? "Former member")
-                    .ToDictionary(g => g.Key, g => g.Sum(e => e.Amount));
+                var state = await AuthState;
+                isAuthenticated = state.User.Identity?.IsAuthenticated == true;
             }
+
+            if (isAuthenticated)
+            {
+                var user = await Svc.GetCurrentUserAsync();
+                if (user?.Household is not null)
+                {
+                    hasHousehold = true;
+                    householdName = user.Household.Name;
+
+                    var today = DateTime.Today;
+                    expenses = await Svc.GetExpensesAsync(today.Year, today.Month);
+                    statuses = await Svc.GetBudgetStatusAsync(today.Year, today.Month);
+
+                    totalSpent = expenses.Sum(e => e.Amount);
+                    totalBudget = statuses.Sum(s => s.Limit ?? 0);
+                    memberTotals = expenses
+                        .GroupBy(e => e.PaidBy?.Name ?? "Former member")
+                        .ToDictionary(g => g.Key, g => g.Sum(e => e.Amount));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            error = "The dashboard could not be loaded. Please refresh the page and try again.";
         }
 
         loading = false;
     }
 
+    /// <summary>Green while under budget, yellow from 75%, red at 100% or more.</summary>
     private static string BarClass(double percent) =>
         percent >= 100 ? "bg-danger" : percent >= 75 ? "bg-warning" : "bg-success";
+
+    /// <summary>Width of the bar as a whole number from 0 to 100.</summary>
+    private static int BarWidth(double percent) => (int)Math.Round(Math.Min(percent, 100));
 }

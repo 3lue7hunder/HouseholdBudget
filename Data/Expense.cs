@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace HouseholdBudget.Data;
 
+/// <summary>One purchase or bill. It belongs to a household and a category, and records who paid.</summary>
 public class Expense
 {
     public int Id { get; set; }

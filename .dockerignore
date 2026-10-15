@@ -2,6 +2,6 @@ bin/
 obj/
 .git/
 .vs/
-*.db
-*.db-shm
-*.db-wal
+.vscode/
+app.db*
+*.md

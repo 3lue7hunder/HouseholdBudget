@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace HouseholdBudget.Data;
 
+/// <summary>A group of people who share one budget. Members join by typing the invite code.</summary>
 public class Household
 {
     public int Id { get; set; }

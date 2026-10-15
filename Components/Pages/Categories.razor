@@ -1,17 +1,16 @@
 @page "/categories"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@using HouseholdBudget.Data
-@using HouseholdBudget.Services
 @inject BudgetService Svc
+@inject ILogger<Categories> Logger
 
-<PageTitle>Categories</PageTitle>
+<PageTitle>Categories | Household Budget</PageTitle>
 
 <h1>Categories</h1>
 
 @if (loading)
 {
-    <p><em>Loading...</em></p>
+    <p role="status">Loading...</p>
 }
 else if (!hasHousehold)
 {
@@ -21,26 +20,39 @@ else if (!hasHousehold)
 }
 else
 {
+    <div aria-live="polite">
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-success" role="status">@message</div>
+        }
+    </div>
     @if (!string.IsNullOrEmpty(error))
     {
-        <div class="alert alert-danger">@error</div>
+        <div class="alert alert-danger" role="alert">@error</div>
     }
 
-    <div class="input-group mb-4" style="max-width: 420px;">
-        <input class="form-control" placeholder="New category name" maxlength="60" @bind="newName" @bind:event="oninput" />
-        <button class="btn btn-primary" @onclick="AddAsync" disabled="@string.IsNullOrWhiteSpace(newName)">Add</button>
+    <div class="mb-4" style="max-width: 420px;">
+        <label class="form-label" for="new-category">New category name</label>
+        <div class="input-group">
+            <input id="new-category" class="form-control" maxlength="60" autocomplete="off"
+                   @bind="newName" @bind:event="oninput" />
+            <button type="button" class="btn btn-primary" @onclick="AddAsync" disabled="@string.IsNullOrWhiteSpace(newName)">Add</button>
+        </div>
     </div>
 
+    <h2 class="h5">Your categories</h2>
     <ul class="list-group" style="max-width: 520px;">
         @foreach (var c in categories)
         {
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 @if (renamingId == c.Id)
                 {
-                    <input class="form-control me-2" maxlength="60" @bind="renameText" @bind:event="oninput" />
+                    <label class="visually-hidden" for="rename-category">New name for @c.Name</label>
+                    <input id="rename-category" class="form-control me-2" maxlength="60" autocomplete="off"
+                           @bind="renameText" @bind:event="oninput" />
                     <div class="text-nowrap">
-                        <button class="btn btn-sm btn-success me-1" @onclick="SaveRenameAsync">Save</button>
-                        <button class="btn btn-sm btn-secondary" @onclick="() => renamingId = null">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-success me-1" aria-label="Save new name for @c.Name" @onclick="SaveRenameAsync">Save</button>
+                        <button type="button" class="btn btn-sm btn-secondary" aria-label="Cancel renaming @c.Name" @onclick="() => renamingId = null">Cancel</button>
                     </div>
                 }
                 else
@@ -49,13 +61,13 @@ else
                     <div class="text-nowrap">
                         @if (confirmDeleteId == c.Id)
                         {
-                            <button class="btn btn-sm btn-danger me-1" @onclick="() => DeleteAsync(c.Id)">Confirm</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="() => confirmDeleteId = null">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-danger me-1" aria-label="Confirm delete @c.Name" @onclick="() => DeleteAsync(c.Id)">Confirm</button>
+                            <button type="button" class="btn btn-sm btn-secondary" aria-label="Cancel delete @c.Name" @onclick="() => confirmDeleteId = null">Cancel</button>
                         }
                         else
                         {
-                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartRename(c)">Rename</button>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => confirmDeleteId = c.Id">Delete</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary me-1" aria-label="Rename @c.Name" @onclick="() => StartRename(c)">Rename</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" aria-label="Delete @c.Name" @onclick="() => confirmDeleteId = c.Id">Delete</button>
                         }
                     </div>
                 }
@@ -65,54 +77,114 @@ else
 }
 
 @code {
+    private const string GenericError = "Something went wrong. Please try again.";
+
     private bool loading = true;
     private bool hasHousehold;
     private List<Category> categories = new();
     private string newName = "";
-    private int? renamingId;
+    private int? renamingId;           // The category being renamed.
     private string renameText = "";
-    private int? confirmDeleteId;
+    private int? confirmDeleteId;      // The category waiting for a delete confirmation.
+    private string? message;
     private string? error;
 
     protected override async Task OnInitializedAsync()
     {
-        var user = await Svc.GetCurrentUserAsync();
-        hasHousehold = user?.HouseholdId is not null;
-        if (hasHousehold) await LoadAsync();
+        try
+        {
+            var user = await Svc.GetCurrentUserAsync();
+            hasHousehold = user?.HouseholdId is not null;
+            if (hasHousehold) await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load the categories page.");
+            error = "Your categories could not be loaded. Please refresh the page and try again.";
+        }
+
         loading = false;
     }
 
     private async Task LoadAsync() => categories = await Svc.GetCategoriesAsync();
 
+    /// <summary>Adds the category typed in the box.</summary>
     private async Task AddAsync()
     {
-        if (string.IsNullOrWhiteSpace(newName)) return;
-        error = null;
-        await Svc.AddCategoryAsync(newName);
-        newName = "";
-        await LoadAsync();
+        message = error = null;
+        try
+        {
+            var name = newName.Trim();
+            await Svc.AddCategoryAsync(newName);
+            newName = "";
+            await LoadAsync();
+            message = $"Category \"{name}\" added.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not add a category.");
+            error = GenericError;
+        }
     }
 
     private void StartRename(Category c)
     {
-        error = null;
+        message = error = null;
         renamingId = c.Id;
         renameText = c.Name;
     }
 
+    /// <summary>Saves the new name for the category being renamed.</summary>
     private async Task SaveRenameAsync()
     {
-        if (renamingId is null || string.IsNullOrWhiteSpace(renameText)) return;
-        await Svc.RenameCategoryAsync(renamingId.Value, renameText);
-        renamingId = null;
-        await LoadAsync();
+        if (renamingId is null) return;
+        message = error = null;
+        try
+        {
+            await Svc.RenameCategoryAsync(renamingId.Value, renameText);
+            renamingId = null;
+            await LoadAsync();
+            message = "Category renamed.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not rename a category.");
+            error = GenericError;
+        }
     }
 
+    /// <summary>Deletes a category unless it still has expenses.</summary>
     private async Task DeleteAsync(int id)
     {
-        var deleted = await Svc.DeleteCategoryAsync(id);
-        confirmDeleteId = null;
-        error = deleted ? null : "That category still has expenses. Move or delete them first.";
-        await LoadAsync();
+        message = error = null;
+        try
+        {
+            var deleted = await Svc.DeleteCategoryAsync(id);
+            confirmDeleteId = null;
+            if (deleted)
+                message = "Category deleted.";
+            else
+                error = "That category still has expenses. Move or delete them first.";
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            confirmDeleteId = null;
+            error = ex.Message;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not delete a category.");
+            error = GenericError;
+        }
     }
 }

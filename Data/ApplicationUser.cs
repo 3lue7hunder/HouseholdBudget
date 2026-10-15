@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace HouseholdBudget.Data;
 
+/// <summary>A person who can log in. Extends the Identity user with the household they belong to.</summary>
 public class ApplicationUser : IdentityUser
 {
     public int? HouseholdId { get; set; }

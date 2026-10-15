@@ -1,17 +1,16 @@
 @page "/expenses"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@using HouseholdBudget.Data
-@using HouseholdBudget.Services
 @inject BudgetService Svc
+@inject ILogger<Expenses> Logger
 
-<PageTitle>Expenses</PageTitle>
+<PageTitle>Expenses | Household Budget</PageTitle>
 
 <h1>Expenses</h1>
 
 @if (loading)
 {
-    <p><em>Loading...</em></p>
+    <p role="status">Loading...</p>
 }
 else if (!hasHousehold)
 {
@@ -28,16 +27,22 @@ else
                    @bind="month" @bind:format="yyyy-MM" @bind:after="LoadExpensesAsync" />
         </div>
         <div class="col-auto">
-            <button class="btn btn-primary" @onclick="StartAdd">Add expense</button>
+            <button type="button" class="btn btn-primary" @onclick="StartAdd">Add expense</button>
         </div>
         <div class="col text-end">
-            <span class="fs-5">Total: <strong>@Total.ToString("$#,##0.00")</strong></span>
+            <span class="fs-5">Total: <strong>@Money.Format(Total)</strong></span>
         </div>
     </div>
 
+    <div aria-live="polite">
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-success" role="status">@message</div>
+        }
+    </div>
     @if (!string.IsNullOrEmpty(error))
     {
-        <div class="alert alert-danger">@error</div>
+        <div class="alert alert-danger" role="alert">@error</div>
     }
 
     @if (editing is not null)
@@ -45,23 +50,23 @@ else
         <EditForm Model="editing" OnValidSubmit="SaveAsync" class="card card-body mb-4">
             <DataAnnotationsValidator />
             <ValidationSummary />
-            <h5>@(editing.Id == 0 ? "Add expense" : "Edit expense")</h5>
+            <h2 class="h5">@(editing.Id == 0 ? "Add expense" : "Edit expense")</h2>
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label">Description</label>
-                    <InputText class="form-control" @bind-Value="editing.Description" />
+                    <label class="form-label" for="expense-description">Description</label>
+                    <InputText id="expense-description" class="form-control" @bind-Value="editing.Description" />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Amount</label>
-                    <InputNumber class="form-control" @bind-Value="editing.Amount" />
+                    <label class="form-label" for="expense-amount">Amount ($)</label>
+                    <InputNumber id="expense-amount" class="form-control" @bind-Value="editing.Amount" />
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Date</label>
-                    <InputDate class="form-control" @bind-Value="editing.Date" />
+                    <label class="form-label" for="expense-date">Date</label>
+                    <InputDate id="expense-date" class="form-control" @bind-Value="editing.Date" />
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Category</label>
-                    <InputSelect class="form-select" @bind-Value="editing.CategoryId">
+                    <label class="form-label" for="expense-category">Category</label>
+                    <InputSelect id="expense-category" class="form-select" @bind-Value="editing.CategoryId">
                         <option value="0">Select...</option>
                         @foreach (var c in categories)
                         {
@@ -70,8 +75,8 @@ else
                     </InputSelect>
                 </div>
                 <div class="col-12">
-                    <label class="form-label">Notes (optional)</label>
-                    <InputText class="form-control" @bind-Value="editing.Notes" />
+                    <label class="form-label" for="expense-notes">Notes (optional)</label>
+                    <InputText id="expense-notes" class="form-control" @bind-Value="editing.Notes" />
                 </div>
             </div>
             <div class="mt-3">
@@ -87,91 +92,116 @@ else
     }
     else
     {
-        <table class="table table-hover align-middle">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Category</th>
-                    <th>Paid by</th>
-                    <th class="text-end">Amount</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var e in expenses)
-            {
-                <tr>
-                    <td>@e.Date.ToString("MMM d, yyyy")</td>
-                    <td>
-                        @e.Description
-                        @if (!string.IsNullOrEmpty(e.Notes))
-                        {
-                            <div class="small text-muted">@e.Notes</div>
-                        }
-                    </td>
-                    <td>@e.Category?.Name</td>
-                    <td>@(e.PaidBy?.Name ?? "Former member")</td>
-                    <td class="text-end">@e.Amount.ToString("$#,##0.00")</td>
-                    <td class="text-end text-nowrap">
-                        @if (confirmDeleteId == e.Id)
-                        {
-                            <button class="btn btn-sm btn-danger me-1" @onclick="() => DeleteAsync(e.Id)">Confirm</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="() => confirmDeleteId = null">Cancel</button>
-                        }
-                        else
-                        {
-                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartEdit(e)">Edit</button>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => confirmDeleteId = e.Id">Delete</button>
-                        }
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <caption class="visually-hidden">Expenses for @month.ToString("MMMM yyyy")</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Date</th>
+                        <th scope="col">Description</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Paid by</th>
+                        <th scope="col" class="text-end">Amount</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var e in expenses)
+                {
+                    <tr>
+                        <td>@e.Date.ToString("MMM d, yyyy")</td>
+                        <td>
+                            @e.Description
+                            @if (!string.IsNullOrEmpty(e.Notes))
+                            {
+                                <div class="small text-muted">@e.Notes</div>
+                            }
+                        </td>
+                        <td>@e.Category?.Name</td>
+                        <td>@(e.PaidBy?.Name ?? "Former member")</td>
+                        <td class="text-end">@Money.Format(e.Amount)</td>
+                        <td class="text-end text-nowrap">
+                            @if (confirmDeleteId == e.Id)
+                            {
+                                <button type="button" class="btn btn-sm btn-danger me-1" aria-label="Confirm delete @e.Description" @onclick="() => DeleteAsync(e.Id)">Confirm</button>
+                                <button type="button" class="btn btn-sm btn-secondary" aria-label="Cancel delete @e.Description" @onclick="() => confirmDeleteId = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary me-1" aria-label="Edit @e.Description" @onclick="() => StartEdit(e)">Edit</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" aria-label="Delete @e.Description" @onclick="() => confirmDeleteId = e.Id">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
     }
 }
 
 @code {
+    private const string GenericError = "Something went wrong. Please try again.";
+
     private bool loading = true;
     private bool hasHousehold;
     private DateTime month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<Expense> expenses = new();
     private List<Category> categories = new();
-    private Expense? editing;
-    private int? confirmDeleteId;
+    private Expense? editing;          // The expense in the form. Id 0 means a new expense.
+    private int? confirmDeleteId;      // The expense waiting for a delete confirmation.
+    private string? message;
     private string? error;
 
     private decimal Total => expenses.Sum(e => e.Amount);
 
     protected override async Task OnInitializedAsync()
     {
-        var user = await Svc.GetCurrentUserAsync();
-        hasHousehold = user?.HouseholdId is not null;
-
-        if (hasHousehold)
+        try
         {
-            categories = await Svc.GetCategoriesAsync();
-            await LoadExpensesAsync();
+            var user = await Svc.GetCurrentUserAsync();
+            hasHousehold = user?.HouseholdId is not null;
+
+            if (hasHousehold)
+            {
+                categories = await Svc.GetCategoriesAsync();
+                await LoadExpensesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load the expenses page.");
+            error = "Your expenses could not be loaded. Please refresh the page and try again.";
         }
 
         loading = false;
     }
 
+    /// <summary>Loads the expenses for the month picked in the month box.</summary>
     private async Task LoadExpensesAsync()
     {
-        expenses = await Svc.GetExpensesAsync(month.Year, month.Month);
+        try
+        {
+            expenses = await Svc.GetExpensesAsync(month.Year, month.Month);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load expenses.");
+            error = GenericError;
+        }
     }
 
+    /// <summary>Opens an empty form for a new expense.</summary>
     private void StartAdd()
     {
-        error = null;
+        message = error = null;
         editing = new Expense { Date = DateTime.Today };
     }
 
+    /// <summary>Opens the form filled with a copy of an existing expense.</summary>
     private void StartEdit(Expense e)
     {
-        error = null;
+        message = error = null;
         editing = new Expense
         {
             Id = e.Id,
@@ -185,35 +215,54 @@ else
 
     private void Cancel() => editing = null;
 
+    /// <summary>Saves the expense in the form, then shows the month it belongs to.</summary>
     private async Task SaveAsync()
     {
         if (editing is null) return;
+        message = error = null;
 
         try
         {
+            var wasNew = editing.Id == 0;
             await Svc.SaveExpenseAsync(editing);
             month = new DateTime(editing.Date.Year, editing.Date.Month, 1);
             editing = null;
-            error = null;
             await LoadExpensesAsync();
+            message = wasNew ? "Expense added." : "Expense updated.";
         }
         catch (InvalidOperationException ex)
         {
             error = ex.Message;
         }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not save an expense.");
+            error = GenericError;
+        }
     }
 
+    /// <summary>Deletes an expense after the user confirmed it.</summary>
     private async Task DeleteAsync(int id)
     {
+        message = error = null;
+
         try
         {
             await Svc.DeleteExpenseAsync(id);
             confirmDeleteId = null;
             await LoadExpensesAsync();
+            message = "Expense deleted.";
         }
         catch (InvalidOperationException ex)
         {
+            confirmDeleteId = null;
             error = ex.Message;
+            await LoadExpensesAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not delete an expense.");
+            error = GenericError;
         }
     }
 }

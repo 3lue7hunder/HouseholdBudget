@@ -3,6 +3,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HouseholdBudget.Data;
 
+/// <summary>
+/// The database for the app: the Identity tables plus households, categories, expenses and budgets.
+/// OnModelCreating sets how the tables relate and what happens to related rows on delete.
+/// </summary>
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
     : IdentityDbContext<ApplicationUser>(options)
 {

@@ -1,16 +1,16 @@
 @page "/budgets"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@using HouseholdBudget.Services
 @inject BudgetService Svc
+@inject ILogger<Budgets> Logger
 
-<PageTitle>Budgets</PageTitle>
+<PageTitle>Budgets | Household Budget</PageTitle>
 
 <h1>Monthly Budgets</h1>
 
 @if (loading)
 {
-    <p><em>Loading...</em></p>
+    <p role="status">Loading...</p>
 }
 else if (!hasHousehold)
 {
@@ -27,50 +27,68 @@ else
                    @bind="month" @bind:format="yyyy-MM" @bind:after="LoadAsync" />
         </div>
         <div class="col text-muted">
-            Limits repeat every month. Enter a limit and click away to save. Clear it to remove the budget.
+            Limits repeat every month. Enter a limit and click away to save it. Clear the box to remove the budget.
         </div>
     </div>
 
-    <table class="table align-middle">
-        <thead>
-            <tr>
-                <th>Category</th>
-                <th style="width:160px">Monthly limit</th>
-                <th class="text-end">Spent</th>
-                <th class="text-end">Remaining</th>
-                <th style="width:30%">Progress</th>
-            </tr>
-        </thead>
-        <tbody>
-        @foreach (var row in rows)
+    <div aria-live="polite">
+        @if (!string.IsNullOrEmpty(message))
         {
-            <tr>
-                <td>@row.Name</td>
-                <td>
-                    <input type="number" step="0.01" min="0" class="form-control"
-                           @bind="row.Limit" @bind:after="() => SaveLimitAsync(row)" />
-                </td>
-                <td class="text-end">@row.Spent.ToString("$#,##0.00")</td>
-                <td class="text-end @(row.Remaining < 0 ? "text-danger" : "")">
-                    @(row.Limit is > 0 ? row.Remaining.ToString("$#,##0.00") : "-")
-                </td>
-                <td>
-                    @if (row.Limit is > 0)
-                    {
-                        <div class="progress">
-                            <div class="progress-bar @BarClass(row.Percent)" style="width:@(Math.Min(row.Percent, 100).ToString("0"))%">
-                                @row.Percent.ToString("0")%
-                            </div>
-                        </div>
-                    }
-                </td>
-            </tr>
+            <div class="alert alert-success" role="status">@message</div>
         }
-        </tbody>
-    </table>
+    </div>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <caption class="visually-hidden">Monthly limits and spending by category for @month.ToString("MMMM yyyy")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Category</th>
+                    <th scope="col" style="width:160px">Monthly limit ($)</th>
+                    <th scope="col" class="text-end">Spent</th>
+                    <th scope="col" class="text-end">Remaining</th>
+                    <th scope="col" style="min-width:180px">Progress</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <th scope="row" class="fw-normal">@row.Name</th>
+                    <td>
+                        <label class="visually-hidden" for="limit-@row.CategoryId">Monthly limit for @row.Name</label>
+                        <input id="limit-@row.CategoryId" type="number" step="0.01" min="0" class="form-control"
+                               @bind="row.Limit" @bind:after="() => SaveLimitAsync(row)" />
+                    </td>
+                    <td class="text-end">@Money.Format(row.Spent)</td>
+                    <td class="text-end @(row.Remaining < 0 ? "text-danger" : "")">
+                        @(row.Limit is > 0 ? Money.Format(row.Remaining) : "No budget")
+                    </td>
+                    <td>
+                        @if (row.Limit is > 0)
+                        {
+                            <div class="progress" role="progressbar" aria-label="@row.Name budget used"
+                                 aria-valuenow="@BarWidth(row.Percent)" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar @BarClass(row.Percent)" style="width:@(BarWidth(row.Percent))%"></div>
+                            </div>
+                            <div class="small text-muted">@Math.Round(row.Percent)% used@(row.Percent >= 100 ? " (over budget)" : "")</div>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
 }
 
 @code {
+    private const string GenericError = "Something went wrong. Please try again.";
+
+    // One table row: a category, its limit and what was spent in the selected month.
     private sealed class Row
     {
         public int CategoryId { get; set; }
@@ -85,29 +103,71 @@ else
     private bool hasHousehold;
     private DateTime month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<Row> rows = new();
+    private string? message;
+    private string? error;
 
     protected override async Task OnInitializedAsync()
     {
-        var user = await Svc.GetCurrentUserAsync();
-        hasHousehold = user?.HouseholdId is not null;
-        if (hasHousehold) await LoadAsync();
+        try
+        {
+            var user = await Svc.GetCurrentUserAsync();
+            hasHousehold = user?.HouseholdId is not null;
+            if (hasHousehold) await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load the budgets page.");
+            error = "Your budgets could not be loaded. Please refresh the page and try again.";
+        }
+
         loading = false;
     }
 
+    /// <summary>Loads each category with its limit and the spending for the selected month.</summary>
     private async Task LoadAsync()
     {
-        var statuses = await Svc.GetBudgetStatusAsync(month.Year, month.Month);
-        rows = statuses
-            .Select(s => new Row { CategoryId = s.CategoryId, Name = s.CategoryName, Limit = s.Limit, Spent = s.Spent })
-            .ToList();
+        try
+        {
+            var statuses = await Svc.GetBudgetStatusAsync(month.Year, month.Month);
+            rows = statuses
+                .Select(s => new Row { CategoryId = s.CategoryId, Name = s.CategoryName, Limit = s.Limit, Spent = s.Spent })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load budgets.");
+            error = GenericError;
+        }
     }
 
+    /// <summary>Saves the limit typed for a category, then refreshes the progress bars.</summary>
     private async Task SaveLimitAsync(Row row)
     {
-        await Svc.SetBudgetAsync(row.CategoryId, row.Limit);
+        message = error = null;
+        try
+        {
+            await Svc.SetBudgetAsync(row.CategoryId, row.Limit);
+            message = row.Limit is > 0
+                ? $"Budget for {row.Name} saved."
+                : $"Budget for {row.Name} removed.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not save a budget.");
+            error = GenericError;
+        }
+
         await LoadAsync();
     }
 
+    /// <summary>Green while under budget, yellow from 75%, red at 100% or more.</summary>
     private static string BarClass(double percent) =>
         percent >= 100 ? "bg-danger" : percent >= 75 ? "bg-warning" : "bg-success";
+
+    /// <summary>Width of the bar as a whole number from 0 to 100.</summary>
+    private static int BarWidth(double percent) => (int)Math.Round(Math.Min(percent, 100));
 }
